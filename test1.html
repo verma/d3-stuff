@@ -14,7 +14,7 @@ circle {
 .company-name {
   font-family: sans-serif;
   text-transform: uppercase;
-  fill: white;
+  fill: black;
   fill-opacity: 50%;
   font-size: 20px;
   font-weight: 200;
@@ -24,14 +24,16 @@ circle {
 </style>
 <script>
 $(document).ready(function() {
-  var width = 800;
-  var height = 300;
+  var width = 1000;
+  var height = 500;
+  var min_bond_width = 20;
+  var bonds_margin = 5;
 
   console.log("starting up D3...");
   var svg = d3.selectAll("#body").append("svg:svg")
   .attr("width", width)
   .attr("height", height)
-  .style("background-color", "#eer");
+  .style("background-color", "#eee");
 
   data = [
     { company: 'Super awesome bond company',
@@ -109,34 +111,59 @@ $(document).ready(function() {
         'amount': 45000000 }]}
   ]
 
+  var utc = function(s) {
+    var d = new Date(s);
+    return new Date(d.getUTCFullYear(), d.getUTCMonth(), 
+      d.getUTCDate(),  d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds());
+  }
+
+  var all_bonds = _.reduce(data, function(acc, b) {
+    return acc.concat(b.bonds) }, []);
   var bonds_acc =
     _.reduce(data, function(acc, b) { 
       return acc.concat(_.last(acc) + _.size(b.bonds)); }, [0]);
   total_bonds = _.last(bonds_acc);
 
-  console.log(bonds_acc);
-  console.log(total_bonds);
+  var min_date = utc(_.min(all_bonds, function(e) { return utc(e.issue_date); }).issue_date);
+  var max_date = utc(_.max(all_bonds, function(e) { return utc(e.maturity_date); }).maturity_date);
+
+  var min_amount = _.min(all_bonds, function(e) { return e.amount; }).amount;
+  var max_amount = _.max(all_bonds, function(e) { return e.amount; }).amount;
+
+  console.log(min_date);
+  console.log(max_date);
+  console.log(min_amount);
+  console.log(max_amount);
 
   var offset = d3.scale.linear().
     domain([0, _.max(bonds_acc)]).
     range([0, width]);
 
-  console.log(_.max(data, function(d) { return _.size(d.bonds); }));
+  var date_offset = d3.time.scale().
+    domain([min_date, max_date]).
+    range([20, height - 40]);
+
+  var volume_colorscale = d3.scale.linear().
+    domain([min_amount, max_amount]).
+    range([0.2, 0.8 ]);
 
   var colorscale = d3.scale.linear().
     domain([0, _.max(_.map(data, function(d) { return _.size(d.bonds); }))]).
-    range([90, 30]); // darker are important
+    range([60, 90]); // darker are important
 
-  console.log(colorscale(3));
+  var paneWidth = function(i) {
+    return offset(bonds_acc[i+1]) - offset(bonds_acc[i]) - 1;
+  }
 
-  var node = svg.selectAll('g').data(data).
+  var node = svg.selectAll('g.pane').data(data).
     enter().append('g').
+    attr('class', 'pane').
     attr('transform', function(d, i) { return 'translate(' + offset(bonds_acc[i]) + ', 0)'; });
 
   node.append('rect').
     attr('x', 0).
     attr('y', 0).
-    attr('width', function(d, i) { return offset(bonds_acc[i+1]) - offset(bonds_acc[i]) + 1; }).
+    attr('width', function(d, i) { return paneWidth(i); }).
     attr('height', height).
     style('fill', function(d) { return 'hsl(282, 28%, ' + colorscale(_.size(d.bonds)) + '%)'; });
 
@@ -146,6 +173,30 @@ $(document).ready(function() {
     attr('dy', '1em').
     attr('transform', 'translate(0, ' + (height - 15) + ') rotate(-90)').
     text(function(d) { return d.company; });
+
+  var bonds = node.selectAll('g.bond').
+    data(function(d, i) { return _.take(d.bonds, (paneWidth(i)-35-5) / (min_bond_width+bonds_margin)); }). // only select as many we can display
+    enter().append('g').
+    attr('transform', function(d, i) {
+      return 'translate(' + (35 + (min_bond_width + bonds_margin)*i) + ',' + date_offset(utc(d.issue_date)) + ')'; }).
+    attr('class', 'bond');
+
+  bonds.append('rect').
+    attr('x', 0).
+    attr('y', 0).
+    attr('width', min_bond_width).
+    attr('height', function(d) { return date_offset(utc(d.maturity_date)) - date_offset(utc(d.issue_date)); }).
+    style('fill', function(d) { return 'hsl(312, 82%,20%)'; }).
+    style('fill-opacity', function(d) { return volume_colorscale(d.amount); }).
+    on('mouseover', function(d) {
+        d3.select(this).
+          style('stroke', 'black').
+          style('fill-opacity', 1.0); }).
+    on('mouseout', function(d) {
+        d3.select(this).
+          style('stroke', 'transparent').
+          style('fill-opacity', function(d) { return volume_colorscale(d.amount); })});
+
 });
 </script>
 </head>
